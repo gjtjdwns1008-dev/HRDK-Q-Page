@@ -1,0 +1,112 @@
+# .github/workflows/build-qpage.yml
+# ───────────────────────────────────────────────────────────────
+# 하는 일: pdf/ 의 종목별 화면 PDF → PNG 변환 + index.html 을 묶어
+#          dist/ 를 만들고 GitHub Pages로 배포한다.
+#
+# Q-RADAR build-navigator.yml 과 같은 방식이다:
+#   PNG를 레포에 커밋하지 않는다. 빌드 산출물(dist)로 만들어 Pages artifact로 올린다.
+#   → 레포 히스토리에 이미지가 쌓이지 않는다. (652장 × 매년 = 수백 MB를 아낀다)
+#
+# 사전 1회 설정 (깃허브 웹): Settings → Pages → Source = "GitHub Actions"
+# 시크릿: 없음. 외부 API를 쓰지 않는다.
+# ───────────────────────────────────────────────────────────────
+name: Build & Deploy Q-Page 자격정보집
+
+on:
+  workflow_dispatch:
+    inputs:
+      dpi:
+        description: '화면 PNG 해상도. 기본 200 — 폰에서 2배 확대까지 글자가 버팁니다'
+        default: '200'
+      pages:
+        description: 'first=첫 쪽만 PNG(기본) · all=모든 쪽 PNG'
+        default: 'first'
+  push:
+    branches: [ main ]
+    paths:
+      - 'index.html'
+      - 'pdf/**'
+      - 'tools/**'
+      - '.github/workflows/build-qpage.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Pages 프로비저닝 확인/강제 (신규 레포 첫 배포 대비)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: 파이썬 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: PDF 변환 도구 설치
+        # poppler-utils: pdftoppm(래스터화) · pdfinfo(쪽수)
+        # pngquant     : 감색. 없으면 용량이 3배가 된다(실측 247KB → 75KB)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils pngquant
+
+      - name: 변환 결과 캐시 (바뀐 PDF만 다시 만들도록)
+        uses: actions/cache@v4
+        with:
+          path: dist/sheets
+          key: sheets-${{ inputs.dpi || '200' }}-${{ inputs.pages || 'first' }}-${{ hashFiles('pdf/**/*.pdf') }}
+          restore-keys: sheets-${{ inputs.dpi || '200' }}-${{ inputs.pages || 'first' }}-
+
+      - name: 화면 PDF → PNG 변환
+        run: |
+          if [ -d pdf ] && [ -n "$(ls -A pdf/*.pdf 2>/dev/null)" ]; then
+            python tools/pdf_to_png.py pdf dist/sheets \
+              --dpi "${{ inputs.dpi || '200' }}" \
+              --pages "${{ inputs.pages || 'first' }}" | tee convert.log
+            {
+              echo '### 화면 PNG 변환'
+              echo '```'
+              sed -n '/\[변환 결과\]/,$p' convert.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "pdf/ 에 PDF가 없습니다. 화면 원본 없이 배포합니다."
+            echo '### 화면 PNG 변환 — 건너뜀 (pdf/ 비어 있음)' >> "$GITHUB_STEP_SUMMARY"
+            mkdir -p dist/sheets
+          fi
+
+      - name: 사이트 파일 모으기
+        run: |
+          cp index.html dist/
+          [ -f robots.txt ] && cp robots.txt dist/ || true
+          touch dist/.nojekyll
+          echo "### 배포 산출물" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          du -sh dist dist/sheets 2>/dev/null >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 결과물(dist) 업로드
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: GitHub Pages 배포
+        id: deployment
+        uses: actions/deploy-pages@v4
