@@ -777,7 +777,7 @@ function renderDetail(code){
         <button class="btn inv" id="d-cmp" aria-pressed="${inCmp}">${inCmp?'비교에서 빼기':'비교에 담기'}</button>
         <button class="btn inv" id="d-link">링크 복사</button>
         <button class="btn inv" id="d-print">인쇄 · PDF 저장</button>
-        ${META.sheet_dir?`<a class="btn inv" href="${META.sheet_dir}/${encodeURIComponent(x.code)}.png" target="_blank" rel="noopener">지면 원본 보기</a>`:''}
+        ${META.sheet_dir?`<a class="btn inv" href="${META.sheet_dir}/${encodeURIComponent(x.code)}.png" target="_blank" rel="noopener">화면 원본 보기</a><a class="btn inv" href="${META.sheet_dir}/${encodeURIComponent(x.code)}.png" download="${esc(x.name)}_${META.base_year}년 분석자료.png">원본 내려받기</a>`:''}
       </div>
     </header>
 
@@ -1030,7 +1030,7 @@ function renderDetail(code){
       </table>
       </div>
       ${PUB?`<p class="basisnote pubwarn">이 자료는 자격취득자에 대한 서술 통계입니다. 자격 취득이 취업에 미친 인과적 효과를 추정한 것이 아니며, 종목마다 노동시장 여건이 달라 종목끼리 직접 비교하기는 어렵습니다.</p>`:''}
-      <p class="basisnote">${META.sheet_dir?`“지면 원본 보기”는 엑셀 One-page를 200dpi 이미지로 변환한 것으로, 이 화면과 같은 자료를 씁니다.<br>`:''}척도(10점)는 ${etl(x.etype)} ${fmt(b.n)}종목을 각 지표별로 10등분한 순위입니다. 출처가 다른 숫자는 모집단과 시점이 달라 직접 비교할 수 없습니다.</p>
+      <p class="basisnote">${META.sheet_dir?`“화면 원본 보기”는 엑셀 One-page를 200dpi 이미지로 변환한 것으로, 이 화면과 같은 자료를 씁니다.<br>`:''}척도(10점)는 ${etl(x.etype)} ${fmt(b.n)}종목을 각 지표별로 10등분한 순위입니다. 출처가 다른 숫자는 모집단과 시점이 달라 직접 비교할 수 없습니다.</p>
     </section>
 
     <footer class="sfoot">
