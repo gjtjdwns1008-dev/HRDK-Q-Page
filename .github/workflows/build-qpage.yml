@@ -1,10 +1,19 @@
 # .github/workflows/build-qpage.yml
 # ───────────────────────────────────────────────────────────────
-# 하는 일: pdf/ 의 종목별 화면 PDF → PNG 변환 + index.html 을 묶어
+# 하는 일: pdf/ 의 종목별 화면 PDF → PNG 변환 + 최신 외부공개 HTML을 묶어
 #          dist/ 를 만들고 GitHub Pages로 배포한다.
 #
-# Q-RADAR build-navigator.yml 과 같은 방식이다:
-#   PNG를 레포에 커밋하지 않는다. 빌드 산출물(dist)로 만들어 Pages artifact로 올린다.
+# 파일 규약(v14~):
+#   엑셀 리본 [외부공개 HTML] 버튼이 만든 q-page-outside_YYYY-MM-DD.html 을
+#   저장소 루트에 "파일명 그대로" 올린다. 워크플로가 날짜상 가장 최신 파일을
+#   골라 index.html 로 배포한다. 과거 날짜 파일은 저장소에 남아
+#   연도별 아카이브가 되지만, 웹에는 최신 1개만 노출된다.
+#
+# 안전장치:
+#   q-page-inside* 또는 *내부용*.html 이 저장소에서 발견되면
+#   배포를 강제 중단한다(내부 자료 유출 방지).
+#
+# PNG를 레포에 커밋하지 않는다. 빌드 산출물(dist)로 만들어 Pages artifact로 올린다.
 #   → 레포 히스토리에 이미지가 쌓이지 않는다. (652장 × 매년 = 수백 MB를 아낀다)
 #
 # 사전 1회 설정 (깃허브 웹): Settings → Pages → Source = "GitHub Actions"
@@ -24,7 +33,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'index.html'
+      - 'q-page-outside_*.html'
       - 'pdf/**'
       - 'tools/**'
       - '.github/workflows/build-qpage.yml'
@@ -85,15 +94,31 @@ jobs:
             mkdir -p dist/sheets
           fi
 
-      - name: 사이트 파일 모으기
+      - name: 사이트 파일 모으기 (최신 외부공개본 → index.html)
         run: |
-          cp index.html dist/
+          # ── 안전장치: 내부용 파일이 저장소에 올라오면 배포 강제 중단 ──
+          FOUND_INSIDE=$( (ls q-page-inside* 2>/dev/null; ls *내부용*.html 2>/dev/null) | head -5 )
+          if [ -n "$FOUND_INSIDE" ]; then
+            echo "::error::내부용 파일이 저장소에서 발견되었습니다. 즉시 삭제 후 다시 push 하세요."
+            echo "$FOUND_INSIDE"
+            exit 1
+          fi
+          # ── 최신 외부공개본 선택(파일명의 날짜가 정렬 기준) ──
+          LATEST=$(ls q-page-outside_*.html 2>/dev/null | sort | tail -1)
+          if [ -z "$LATEST" ]; then
+            echo "::error::q-page-outside_YYYY-MM-DD.html 파일이 저장소 루트에 없습니다."
+            exit 1
+          fi
+          cp "$LATEST" dist/index.html
           [ -f robots.txt ] && cp robots.txt dist/ || true
           touch dist/.nojekyll
-          echo "### 배포 산출물" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          du -sh dist dist/sheets 2>/dev/null >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### 배포 산출물"
+            echo "- 홈(index)으로 배포된 파일: \`$LATEST\`"
+            echo '```'
+            du -sh dist dist/sheets 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 결과물(dist) 업로드
         uses: actions/upload-pages-artifact@v3
