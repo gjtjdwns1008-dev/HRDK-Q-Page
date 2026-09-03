@@ -1,23 +1,26 @@
-# .github/workflows/build-qpage.yml
+# .github/workflows/build-qpage.yml  (v2)
 # ───────────────────────────────────────────────────────────────
 # 하는 일: pdf/ 의 종목별 화면 PDF → PNG 변환 + 최신 외부공개 HTML을 묶어
 #          dist/ 를 만들고 GitHub Pages로 배포한다.
 #
-# 파일 규약(v14~):
-#   엑셀 리본 [외부공개 HTML] 버튼이 만든 q-page-outside_YYYY-MM-DD.html 을
-#   저장소 루트에 "파일명 그대로" 올린다. 워크플로가 날짜상 가장 최신 파일을
-#   골라 index.html 로 배포한다. 과거 날짜 파일은 저장소에 남아
-#   연도별 아카이브가 되지만, 웹에는 최신 1개만 노출된다.
+# 실행 시점(v2에서 변경):
+#   · q-page-outside_YYYY-MM-DD.html 이 올라올 때  ← 유일한 자동 방아쇠
+#   · Actions 탭에서 수동 실행(Run workflow) 할 때
+#   ※ pdf/ 업로드는 실행을 일으키지 않는다.
+#     깃허브 웹은 한 번에 100개까지만 올라가므로 PDF를 여러 번에
+#     나눠 올려도 조용하고, 다 올린 뒤 HTML을 올리면(또는 수동 실행)
+#     그때 한 번만 돈다. → 연간 갱신은 "PDF 먼저, HTML 마지막" 순서.
+#
+# 파일 규약:
+#   q-page-outside_YYYY-MM-DD.html 을 루트에 파일명 그대로 올리면
+#   날짜상 가장 최신 파일이 index.html 로 배포된다. 과거 파일은
+#   저장소에 남아 연도별 보관함이 되고, 웹에는 최신 1개만 노출.
 #
 # 안전장치:
-#   q-page-inside* 또는 *내부용*.html 이 저장소에서 발견되면
-#   배포를 강제 중단한다(내부 자료 유출 방지).
+#   q-page-inside* 또는 *내부용*.html 이 발견되면 배포 강제 중단.
 #
-# PNG를 레포에 커밋하지 않는다. 빌드 산출물(dist)로 만들어 Pages artifact로 올린다.
-#   → 레포 히스토리에 이미지가 쌓이지 않는다. (652장 × 매년 = 수백 MB를 아낀다)
-#
-# 사전 1회 설정 (깃허브 웹): Settings → Pages → Source = "GitHub Actions"
-# 시크릿: 없음. 외부 API를 쓰지 않는다.
+# PNG는 커밋하지 않는다(빌드 산출물). 사전 1회 설정:
+#   Settings → Pages → Source = "GitHub Actions". 비밀키 없음.
 # ───────────────────────────────────────────────────────────────
 name: Build & Deploy Q-Page 자격정보집
 
@@ -34,7 +37,6 @@ on:
     branches: [ main ]
     paths:
       - 'q-page-outside_*.html'
-      - 'pdf/**'
       - 'tools/**'
       - '.github/workflows/build-qpage.yml'
 

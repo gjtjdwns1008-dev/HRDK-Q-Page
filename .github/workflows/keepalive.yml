@@ -1,0 +1,49 @@
+# .github/workflows/keepalive.yml
+# ───────────────────────────────────────────────────────────────
+# 심장박동: 매월 1회, 날짜 파일(.github/.keepalive)을 커밋해
+# 저장소 활동 기록을 남긴다.
+#
+# 왜 필요한가:
+#   깃허브는 저장소에 60일간 커밋이 없으면 예약(cron) 워크플로를
+#   자동으로 꺼버린다. 우리 갱신 주기는 연 1회라 이 규정에 걸리는데,
+#   "그냥 도는 크론"은 커밋을 안 만들어 스스로 꺼진다. 그래서
+#   크론이 커밋을 만들어 활동을 유지하는 방식을 쓴다.
+#
+# 동작:
+#   · 매월 2일 03:23(한국시간) 자동 실행 — 날짜 파일 갱신 커밋 1건
+#   · .keepalive 는 배포 워크플로의 감시 목록에 없어 빌드를 일으키지 않음
+#   · Actions 탭에서 수동 실행(Run workflow)으로 즉시 시험 가능
+#
+# 만약 이 워크플로가 "60일 비활성으로 비활성화됨" 배너와 함께 꺼져 있으면
+# (장기간 저장소를 아예 안 건드린 경우) Actions 탭에서 Enable 버튼 한 번.
+# ───────────────────────────────────────────────────────────────
+name: Keepalive (월 1회 심장박동)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 18 1 * *'   # 매월 1일 18:23 UTC = 매월 2일 03:23 KST
+
+permissions:
+  contents: write
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 날짜 파일 갱신 커밋
+        run: |
+          mkdir -p .github
+          date -u +"last heartbeat: %Y-%m-%d %H:%M UTC" > .github/.keepalive
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/.keepalive
+          if git diff --cached --quiet; then
+            echo "변경 없음 - 커밋 생략"
+          else
+            git commit -m "chore: keepalive heartbeat"
+            git push
+          fi
