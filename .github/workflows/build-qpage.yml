@@ -1,26 +1,23 @@
-# .github/workflows/build-qpage.yml  (v2)
+# .github/workflows/build-qpage.yml  (v3)
 # ───────────────────────────────────────────────────────────────
 # 하는 일: pdf/ 의 종목별 화면 PDF → PNG 변환 + 최신 외부공개 HTML을 묶어
 #          dist/ 를 만들고 GitHub Pages로 배포한다.
 #
-# 실행 시점(v2에서 변경):
-#   · q-page-outside_YYYY-MM-DD.html 이 올라올 때  ← 유일한 자동 방아쇠
-#   · Actions 탭에서 수동 실행(Run workflow) 할 때
-#   ※ pdf/ 업로드는 실행을 일으키지 않는다.
-#     깃허브 웹은 한 번에 100개까지만 올라가므로 PDF를 여러 번에
-#     나눠 올려도 조용하고, 다 올린 뒤 HTML을 올리면(또는 수동 실행)
-#     그때 한 번만 돈다. → 연간 갱신은 "PDF 먼저, HTML 마지막" 순서.
+# 실행 규칙(v3):
+#   · q-page-outside_YYYY-MM-DD.html "추가/수정" 커밋 → 본작업 실행
+#   · 감시 파일의 "삭제만" 있는 커밋 → 문지기가 10초 만에 본작업 생략
+#     (깃허브 push 감시는 추가·수정·삭제를 구분하지 못하므로,
+#      이벤트는 뜨되 커밋 내용을 열어 삭제뿐이면 건너뛴다)
+#   · pdf/ 업로드는 애초에 실행을 일으키지 않는다(감시 목록 밖)
+#   · Actions 탭 수동 실행(Run workflow)은 항상 본작업 실행
+#   ※ 최신본을 삭제해 이전 날짜본으로 되돌리고 싶을 때는 수동 실행 1회.
 #
-# 파일 규약:
-#   q-page-outside_YYYY-MM-DD.html 을 루트에 파일명 그대로 올리면
-#   날짜상 가장 최신 파일이 index.html 로 배포된다. 과거 파일은
-#   저장소에 남아 연도별 보관함이 되고, 웹에는 최신 1개만 노출.
+# 실패 진단(v3): PDF→PNG 변환이 실패해도 Summary 에
+#   변환 결과(실패 파일 목록 포함)를 반드시 출력한 뒤 실패 처리한다.
 #
-# 안전장치:
-#   q-page-inside* 또는 *내부용*.html 이 발견되면 배포 강제 중단.
-#
-# PNG는 커밋하지 않는다(빌드 산출물). 사전 1회 설정:
-#   Settings → Pages → Source = "GitHub Actions". 비밀키 없음.
+# 파일 규약: 날짜상 가장 최신 q-page-outside 파일이 index.html 로 배포.
+# 안전장치: q-page-inside* / *내부용*.html 발견 시 배포 강제 중단.
+# 사전 1회 설정: Settings → Pages → Source = "GitHub Actions".
 # ───────────────────────────────────────────────────────────────
 name: Build & Deploy Q-Page 자격정보집
 
@@ -50,7 +47,45 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.d.outputs.run }}
+    steps:
+      - name: 코드 체크아웃(직전 커밋 포함)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: 삭제 전용 커밋인지 판별
+        id: d
+        run: |
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "수동 실행 → 본작업 진행"; exit 0
+          fi
+          if ! git rev-parse HEAD^ >/dev/null 2>&1; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "비교 대상 없음 → 본작업 진행"; exit 0
+          fi
+          CH=$(git diff --name-status HEAD^ HEAD -- 'q-page-outside_*.html' tools .github/workflows/build-qpage.yml || true)
+          echo "감시 경로 변경분:"; printf '%s\n' "$CH"
+          if [ -z "$(printf '%s' "$CH" | tr -d '[:space:]')" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "판별 불가(여러 커밋 묶음 등) → 안전하게 진행"; exit 0
+          fi
+          NONDEL=$(printf '%s\n' "$CH" | grep -v '^D' | grep -v '^$' | head -1 || true)
+          if [ -n "$NONDEL" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "추가/수정 감지 → 본작업 진행"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### 배포 생략"
+              echo "이번 커밋은 감시 파일의 **삭제만** 포함 → 변환·배포를 건너뜁니다."
+              echo "(삭제로 이전 날짜본을 다시 내보내려면 Run workflow 수동 실행 1회)"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "삭제만 감지 → 본작업 생략"
+          fi
+
   build:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: 코드 체크아웃
@@ -67,8 +102,6 @@ jobs:
           python-version: "3.11"
 
       - name: PDF 변환 도구 설치
-        # poppler-utils: pdftoppm(래스터화) · pdfinfo(쪽수)
-        # pngquant     : 감색. 없으면 용량이 3배가 된다(실측 247KB → 75KB)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils pngquant
 
       - name: 변환 결과 캐시 (바뀐 PDF만 다시 만들도록)
@@ -78,18 +111,26 @@ jobs:
           key: sheets-${{ inputs.dpi || '200' }}-${{ inputs.pages || 'first' }}-${{ hashFiles('pdf/**/*.pdf') }}
           restore-keys: sheets-${{ inputs.dpi || '200' }}-${{ inputs.pages || 'first' }}-
 
-      - name: 화면 PDF → PNG 변환
+      - name: 화면 PDF → PNG 변환 (실패해도 Summary에 결과 기록)
         run: |
           if [ -d pdf ] && [ -n "$(ls -A pdf/*.pdf 2>/dev/null)" ]; then
+            set +e
             python tools/pdf_to_png.py pdf dist/sheets \
               --dpi "${{ inputs.dpi || '200' }}" \
-              --pages "${{ inputs.pages || 'first' }}" | tee convert.log
+              --pages "${{ inputs.pages || 'first' }}" 2>&1 | tee convert.log
+            RC=${PIPESTATUS[0]}
+            set -e
             {
               echo '### 화면 PNG 변환'
+              echo "종료 코드: $RC"
               echo '```'
-              sed -n '/\[변환 결과\]/,$p' convert.log
+              sed -n '/\[변환 결과\]/,$p' convert.log | tail -60
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
+            if [ "$RC" -ne 0 ]; then
+              echo "::error::PDF→PNG 변환이 실패했습니다. Summary의 변환 결과에서 실패 파일을 확인하세요."
+              exit "$RC"
+            fi
           else
             echo "pdf/ 에 PDF가 없습니다. 화면 원본 없이 배포합니다."
             echo '### 화면 PNG 변환 — 건너뜀 (pdf/ 비어 있음)' >> "$GITHUB_STEP_SUMMARY"
@@ -98,14 +139,12 @@ jobs:
 
       - name: 사이트 파일 모으기 (최신 외부공개본 → index.html)
         run: |
-          # ── 안전장치: 내부용 파일이 저장소에 올라오면 배포 강제 중단 ──
           FOUND_INSIDE=$( (ls q-page-inside* 2>/dev/null; ls *내부용*.html 2>/dev/null) | head -5 )
           if [ -n "$FOUND_INSIDE" ]; then
             echo "::error::내부용 파일이 저장소에서 발견되었습니다. 즉시 삭제 후 다시 push 하세요."
             echo "$FOUND_INSIDE"
             exit 1
           fi
-          # ── 최신 외부공개본 선택(파일명의 날짜가 정렬 기준) ──
           LATEST=$(ls q-page-outside_*.html 2>/dev/null | sort | tail -1)
           if [ -z "$LATEST" ]; then
             echo "::error::q-page-outside_YYYY-MM-DD.html 파일이 저장소 루트에 없습니다."
